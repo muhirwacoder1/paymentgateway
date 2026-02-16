@@ -8,17 +8,17 @@ const app = express();
 const PORT = Number(process.env.PORT || 3000);
 const RAW_CALLBACK_BASE_URL = (process.env.CALLBACK_BASE_URL || '').trim();
 const PUBLIC_DIR = path.join(__dirname, 'public');
-const LOG_DIR = path.join(__dirname, 'logs');
+const LOG_DIR = process.env.VERCEL ? '/tmp' : path.join(__dirname, 'logs');
 const CALLBACK_LOG_FILE = path.join(LOG_DIR, 'callback_log.txt');
+let paymentService;
 
-if (!fs.existsSync(LOG_DIR)) {
-  fs.mkdirSync(LOG_DIR, { recursive: true });
+try {
+  if (!fs.existsSync(LOG_DIR)) {
+    fs.mkdirSync(LOG_DIR, { recursive: true });
+  }
+} catch (error) {
+  console.warn(`Log directory unavailable: ${error.message}`);
 }
-
-const paymentService = new LMBTechPaymentService(
-  process.env.LMBTECH_APP_KEY,
-  process.env.LMBTECH_SECRET_KEY
-);
 
 const callbackState = new Map();
 
@@ -26,9 +26,25 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(PUBLIC_DIR));
 
+function getPaymentService() {
+  if (paymentService) {
+    return paymentService;
+  }
+
+  paymentService = new LMBTechPaymentService(
+    process.env.LMBTECH_APP_KEY,
+    process.env.LMBTECH_SECRET_KEY
+  );
+  return paymentService;
+}
+
 function logCallback(type, payload) {
   const line = `[${new Date().toISOString()}] [${type}] ${JSON.stringify(payload)}\n`;
-  fs.appendFileSync(CALLBACK_LOG_FILE, line);
+  try {
+    fs.appendFileSync(CALLBACK_LOG_FILE, line);
+  } catch (error) {
+    console.log(`Callback log fallback (${type}): ${line.trim()} | write error: ${error.message}`);
+  }
 }
 
 function requiredFields(body, fields) {
@@ -162,6 +178,7 @@ app.get('/api/health', (req, res) => {
 
 app.post('/api/payment/momo', async (req, res) => {
   try {
+    const svc = getPaymentService();
     const missing = requiredFields(req.body, ['email', 'name', 'amount', 'payerPhone', 'servicePaid']);
     if (missing.length > 0) {
       return res.status(400).json({
@@ -178,7 +195,7 @@ app.post('/api/payment/momo', async (req, res) => {
       });
     }
 
-    const result = await paymentService.collectPayment({
+    const result = await svc.collectPayment({
       email: req.body.email,
       name: req.body.name,
       amount,
@@ -196,6 +213,7 @@ app.post('/api/payment/momo', async (req, res) => {
 
 app.post('/api/payment/card', async (req, res) => {
   try {
+    const svc = getPaymentService();
     const missing = requiredFields(req.body, ['email', 'name', 'amount', 'servicePaid']);
     if (missing.length > 0) {
       return res.status(400).json({
@@ -212,7 +230,7 @@ app.post('/api/payment/card', async (req, res) => {
       });
     }
 
-    const result = await paymentService.initiateCardPayment({
+    const result = await svc.initiateCardPayment({
       email: req.body.email,
       name: req.body.name,
       amount,
@@ -230,6 +248,7 @@ app.post('/api/payment/card', async (req, res) => {
 
 app.post('/api/payout', async (req, res) => {
   try {
+    const svc = getPaymentService();
     const missing = requiredFields(req.body, ['email', 'name', 'amount', 'recipientPhone']);
     if (missing.length > 0) {
       return res.status(400).json({
@@ -246,7 +265,7 @@ app.post('/api/payout', async (req, res) => {
       });
     }
 
-    const result = await paymentService.sendMoney({
+    const result = await svc.sendMoney({
       email: req.body.email,
       name: req.body.name,
       amount,
@@ -264,6 +283,7 @@ app.post('/api/payout', async (req, res) => {
 
 app.post('/api/sms', async (req, res) => {
   try {
+    const svc = getPaymentService();
     const missing = requiredFields(req.body, ['name', 'phoneNumber', 'message']);
     if (missing.length > 0) {
       return res.status(400).json({
@@ -272,7 +292,7 @@ app.post('/api/sms', async (req, res) => {
       });
     }
 
-    const result = await paymentService.sendSMS({
+    const result = await svc.sendSMS({
       name: req.body.name,
       phoneNumber: req.body.phoneNumber,
       message: req.body.message,
@@ -287,8 +307,9 @@ app.post('/api/sms', async (req, res) => {
 
 app.get('/api/payment/status/:referenceId', async (req, res) => {
   try {
+    const svc = getPaymentService();
     const referenceId = req.params.referenceId;
-    const result = await paymentService.checkStatus(referenceId);
+    const result = await svc.checkStatus(referenceId);
     const payload = result.data;
     const responseText = normalizeMessage(payload, '');
     const localCallback = callbackState.get(referenceId);
@@ -308,17 +329,18 @@ app.get('/api/payment/status/:referenceId', async (req, res) => {
 });
 
 function processCallback(rawPayload) {
+  const svc = getPaymentService();
   if (rawPayload.pesapal_merchant_reference || rawPayload.pesapal_transaction_tracking_id) {
     return {
       type: 'card',
-      validation: paymentService.validateCardCallback(rawPayload)
+      validation: svc.validateCardCallback(rawPayload)
     };
   }
 
   if (rawPayload.reference_id || rawPayload.transaction_id) {
     return {
       type: 'momo',
-      validation: paymentService.validateMoMoCallback(rawPayload)
+      validation: svc.validateMoMoCallback(rawPayload)
     };
   }
 
