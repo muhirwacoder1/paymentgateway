@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>LMBTech Payment Console</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="ambient-shape shape-a" aria-hidden="true"></div>
+    <div class="ambient-shape shape-b" aria-hidden="true"></div>
+    <main class="page-shell">
+      <header class="hero">
+        <p class="kicker">LMBTech Payment System</p>
+        <h1>Checkout + MoMo Flow That Matches the Official API</h1>
+        <p class="hero-subtitle">
+          Basic Auth, callback-safe references, MTN MoMo collections, card checkout, and payout initiation in one
+          console.
+        </p>
+      </header>
+
+      <div id="return-banner" class="return-banner hidden" role="status" aria-live="polite"></div>
+
+      <section class="grid">
+        <article class="panel form-panel">
+          <div class="panel-head">
+            <h2>Create Transaction</h2>
+            <p>Switch mode and submit a request.</p>
+          </div>
+
+          <div class="method-tabs" role="tablist" aria-label="Payment methods">
+            <button type="button" class="tab active" data-method="momo">MoMo Collection</button>
+            <button type="button" class="tab" data-method="card">Card Checkout</button>
+            <button type="button" class="tab" data-method="payout">Payout</button>
+          </div>
+
+          <form id="payment-form" class="stack">
+            <label class="field">
+              <span>Email</span>
+              <input type="email" id="email" required value="customer@example.com" />
+            </label>
+
+            <label class="field">
+              <span>Full Name</span>
+              <input type="text" id="name" required value="John Doe" />
+            </label>
+
+            <label class="field" id="phone-field">
+              <span id="phone-label">Payer Phone</span>
+              <input type="tel" id="phone" value="0785085214" />
+              <small class="helper">Accepted: `078xxxxx`, `7xxxxxxxx`, `2507xxxxxxxx`, `+2507xxxxxxxx`</small>
+            </label>
+
+            <div class="field-row">
+              <label class="field">
+                <span>Amount (RWF)</span>
+                <input type="number" id="amount" min="1" required value="100" />
+              </label>
+              <label class="field">
+                <span>Service</span>
+                <input type="text" id="service" required value="order_123" />
+              </label>
+            </div>
+
+            <label class="field">
+              <span>Reference ID (optional)</span>
+              <input type="text" id="referenceId" placeholder="ORDER-20260216-1234" />
+            </label>
+
+            <button type="submit" id="submit-btn" class="primary-btn">Initiate MoMo Payment</button>
+          </form>
+        </article>
+
+        <article class="panel result-panel">
+          <div class="panel-head">
+            <h2>Live Response</h2>
+            <p>API response and redirect details.</p>
+          </div>
+
+          <div id="result-card" class="result-card neutral">
+            <p id="result-title" class="result-title">Waiting for a request</p>
+            <p id="result-message" class="result-message">Submit a transaction from the form to see live response data.</p>
+          </div>
+
+          <dl class="meta-grid">
+            <div>
+              <dt>Reference</dt>
+              <dd id="result-reference">-</dd>
+            </div>
+            <div>
+              <dt>Status</dt>
+              <dd id="result-status">-</dd>
+            </div>
+            <div>
+              <dt>HTTP</dt>
+              <dd id="result-http">-</dd>
+            </div>
+          </dl>
+
+          <div class="action-row">
+            <button type="button" id="open-redirect" class="secondary-btn hidden">Open Card Checkout</button>
+            <button type="button" id="copy-reference" class="ghost-btn" disabled>Copy Reference</button>
+          </div>
+
+          <pre id="raw-json" class="code-box">{}</pre>
+        </article>
+      </section>
+
+      <section class="grid secondary-grid">
+        <article class="panel checker-panel">
+          <div class="panel-head">
+            <h2>Status Check</h2>
+            <p>Lookup any transaction by reference ID.</p>
+          </div>
+
+          <form id="status-form" class="status-form">
+            <input type="text" id="status-reference" placeholder="ORDER-20260216-1234" required />
+            <button type="submit" class="secondary-btn">Check Status</button>
+          </form>
+
+          <div id="status-result" class="status-result">No lookup performed yet.</div>
+        </article>
+
+        <article class="panel history-panel">
+          <div class="panel-head">
+            <h2>Recent Attempts</h2>
+            <p>Latest requests from this browser tab.</p>
+          </div>
+          <ul id="history-list" class="history-list"></ul>
+        </article>
+      </section>
+    </main>
+    <script src="./app.js"></script>
+  </body>
+  </html>
