@@ -22,6 +22,9 @@ try {
 
 const callbackState = new Map();
 
+// Needed on Vercel/other proxies so req.protocol resolves to https.
+app.set('trust proxy', true);
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(PUBLIC_DIR));
@@ -383,6 +386,20 @@ app.post('/api/payment-callback', handleCallback);
 app.get('/api/payment-callback', handleCallback);
 
 app.get('/card-return', (req, res) => {
+  const hasGatewayReturnParams = Boolean(
+    req.query.pesapal_transaction_tracking_id
+    || req.query.pesapal_response_data
+    || req.query.pesapal_merchant_reference
+  );
+  const referenceId = req.query.reference_id;
+
+  // Initial card redirect from LMBTech points back to this route.
+  // Forward the customer to the actual hosted card checkout page.
+  if (referenceId && !hasGatewayReturnParams) {
+    const checkoutUrl = `https://pay.lmbtech.rw/pay/pesapal/iframe.php?reference_id=${encodeURIComponent(referenceId)}`;
+    return res.redirect(checkoutUrl);
+  }
+
   res.sendFile(path.join(PUBLIC_DIR, 'index.html'));
 });
 
