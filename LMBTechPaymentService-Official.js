@@ -5,7 +5,7 @@ class LMBTechPaymentService {
     this.appKey = appKey || process.env.LMBTECH_APP_KEY;
     this.secretKey = secretKey || process.env.LMBTECH_SECRET_KEY;
     this.apiUrl = options.apiUrl || process.env.LMBTECH_API_URL || 'https://pay.lmbtech.rw/pay/config/api.php';
-    this.timeoutMs = Number(options.timeoutMs || process.env.LMBTECH_TIMEOUT_MS || 20000);
+    this.timeoutMs = Number(options.timeoutMs || process.env.LMBTECH_TIMEOUT_MS || 60000);
 
     if (!this.appKey || !this.secretKey) {
       throw new Error('LMBTech credentials are required');
@@ -107,7 +107,7 @@ class LMBTechPaymentService {
     };
   }
 
-  async makeRequest(data, method = 'POST') {
+  async makeRequest(data, method = 'POST', meta = {}) {
     try {
       const upperMethod = method.toUpperCase();
       const config = {
@@ -130,11 +130,35 @@ class LMBTechPaymentService {
       const response = await axios(config);
       return this.buildResult(response.data, response.status);
     } catch (error) {
+      const timeoutError = error.code === 'ECONNABORTED' || /timeout/i.test(error.message || '');
+      const referenceId = meta.referenceId || data?.reference_id || null;
+
+      if (timeoutError) {
+        return {
+          success: true,
+          data: {
+            status: 'pending',
+            message: `Gateway timeout after ${this.timeoutMs}ms. Payment may still complete. Check status with your reference ID.`,
+            reference_id: referenceId,
+            timeout: true
+          },
+          timeout: true,
+          httpStatus: 202
+        };
+      }
+
       const responsePayload = error.response?.data;
       const fallbackError = responsePayload || { message: error.message };
+      const normalizedFallback = this.parseJsonLikePayload(fallbackError);
       return {
         success: false,
-        data: this.parseJsonLikePayload(fallbackError),
+        data: {
+          status: 'fail',
+          ...(normalizedFallback && typeof normalizedFallback === 'object'
+            ? normalizedFallback
+            : { message: String(normalizedFallback) }),
+          reference_id: referenceId
+        },
         error: fallbackError,
         httpStatus: error.response?.status || 500
       };
@@ -152,6 +176,8 @@ class LMBTechPaymentService {
   }) {
     const formattedPhone = this.formatPhoneNumber(payerPhone);
 
+    const generatedReferenceId = referenceId || this.generateReferenceId('ORDER');
+
     const data = {
       action: 'pay',
       email,
@@ -161,11 +187,11 @@ class LMBTechPaymentService {
       payer_phone: formattedPhone,
       service_paid: servicePaid,
       'service-paid': servicePaid,
-      reference_id: referenceId || this.generateReferenceId('ORDER'),
+      reference_id: generatedReferenceId,
       callback_url: callbackUrl
     };
 
-    return this.makeRequest(data);
+    return this.makeRequest(data, 'POST', { referenceId: generatedReferenceId });
   }
 
   async initiateCardPayment({
@@ -177,6 +203,8 @@ class LMBTechPaymentService {
     cardRedirectUrl,
     referenceId = null
   }) {
+    const generatedReferenceId = referenceId || this.generateReferenceId('ORDER');
+
     const data = {
       action: 'pay',
       email,
@@ -185,13 +213,13 @@ class LMBTechPaymentService {
       amount: Number(amount),
       service_paid: servicePaid,
       'service-paid': servicePaid,
-      reference_id: referenceId || this.generateReferenceId('ORDER'),
+      reference_id: generatedReferenceId,
       callback_url: callbackUrl,
       card_redirect_url: cardRedirectUrl,
       cardredirect_url: cardRedirectUrl
     };
 
-    return this.makeRequest(data);
+    return this.makeRequest(data, 'POST', { referenceId: generatedReferenceId });
   }
 
   async sendMoney({
@@ -205,6 +233,8 @@ class LMBTechPaymentService {
   }) {
     const formattedPhone = this.formatPhoneNumber(recipientPhone);
 
+    const generatedReferenceId = referenceId || this.generateReferenceId('PAYOUT');
+
     const data = {
       action: 'payout',
       email,
@@ -214,11 +244,11 @@ class LMBTechPaymentService {
       payer_phone: formattedPhone,
       service_paid: servicePaid,
       'service-paid': servicePaid,
-      reference_id: referenceId || this.generateReferenceId('PAYOUT'),
+      reference_id: generatedReferenceId,
       callback_url: callbackUrl
     };
 
-    return this.makeRequest(data);
+    return this.makeRequest(data, 'POST', { referenceId: generatedReferenceId });
   }
 
   async sendSMS({
@@ -228,16 +258,17 @@ class LMBTechPaymentService {
     referenceId = null
   }) {
     const formattedPhone = this.formatPhoneNumber(phoneNumber);
+    const generatedReferenceId = referenceId || this.generateReferenceId('SMS');
 
     const data = {
       action: 'sms',
       name,
       tel: formattedPhone,
       message,
-      reference_id: referenceId || this.generateReferenceId('SMS')
+      reference_id: generatedReferenceId
     };
 
-    return this.makeRequest(data);
+    return this.makeRequest(data, 'POST', { referenceId: generatedReferenceId });
   }
 
   async checkStatus(referenceId) {

@@ -51,11 +51,11 @@ const methodConfig = {
 
 const DEFAULT_PRODUCTS = [
   {
-    id: 'momo-test-100-rwf',
+    id: 'momo-test-10-rwf',
     name: 'MoMo Test Product',
-    amount: 100,
+    amount: 10,
     currency: 'RWF',
-    servicePaid: 'test_product_100_rwf'
+    servicePaid: 'test_product_10_rwf'
   }
 ];
 

@@ -23,12 +23,12 @@ try {
 const callbackState = new Map();
 const TEST_PRODUCTS = [
   {
-    id: 'momo-test-100-rwf',
+    id: 'momo-test-10-rwf',
     name: 'MoMo Test Product',
-    servicePaid: 'test_product_100_rwf',
-    amount: 100,
+    servicePaid: 'test_product_10_rwf',
+    amount: 10,
     currency: 'RWF',
-    description: 'Use this product to verify MoMo callback and status flow'
+    description: 'Use this 10 RWF product to verify MoMo callback and status flow'
   }
 ];
 
