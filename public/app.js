@@ -4,7 +4,9 @@ const submitBtn = document.getElementById('submit-btn');
 const phoneField = document.getElementById('phone-field');
 const phoneLabel = document.getElementById('phone-label');
 const phoneInput = document.getElementById('phone');
+const amountInput = document.getElementById('amount');
 const serviceInput = document.getElementById('service');
+const productSelect = document.getElementById('product');
 const referenceInput = document.getElementById('referenceId');
 
 const resultCard = document.getElementById('result-card');
@@ -47,12 +49,24 @@ const methodConfig = {
   }
 };
 
+const DEFAULT_PRODUCTS = [
+  {
+    id: 'momo-test-100-rwf',
+    name: 'MoMo Test Product',
+    amount: 100,
+    currency: 'RWF',
+    servicePaid: 'test_product_100_rwf'
+  }
+];
+
 const history = [];
+let availableProducts = [...DEFAULT_PRODUCTS];
 let activeMethod = 'momo';
 let latestRedirectUrl = null;
 
 function setActiveMethod(method) {
   if (!methodConfig[method]) return;
+  const previousMethod = activeMethod;
   activeMethod = method;
 
   methodTabs.forEach((tab) => {
@@ -62,8 +76,18 @@ function setActiveMethod(method) {
   const config = methodConfig[method];
   submitBtn.textContent = config.submitLabel;
   phoneLabel.textContent = config.phoneLabel;
-  serviceInput.value = config.defaultService;
   phoneField.classList.toggle('hidden', !config.needsPhone);
+
+  const usesProducts = method !== 'payout';
+  productSelect.disabled = !usesProducts;
+  if (usesProducts) {
+    applySelectedProduct();
+    if (!getSelectedProduct() && (previousMethod === 'payout' || !serviceInput.value.trim())) {
+      serviceInput.value = config.defaultService;
+    }
+  } else {
+    serviceInput.value = config.defaultService;
+  }
 
   if (!config.needsPhone) {
     phoneInput.value = '';
@@ -84,6 +108,99 @@ function statusClass(statusLabel) {
   if (statusLabel === 'pending') return 'pending';
   if (statusLabel === 'fail' || statusLabel === 'failed' || statusLabel === 'error') return 'failed';
   return 'neutral';
+}
+
+function normalizePaymentOutcome(status) {
+  const normalized = extractStatusLabel(status);
+  if (['success', 'completed', 'ok', 'paid', 'true'].includes(normalized)) return 'success';
+  if (['pending', 'processing', 'in_progress', 'initiated'].includes(normalized)) return 'pending';
+  if (['fail', 'failed', 'error', 'cancelled', 'canceled', 'declined', 'false'].includes(normalized)) return 'failed';
+  return 'unknown';
+}
+
+function normalizeProducts(items) {
+  if (!Array.isArray(items)) {
+    return [];
+  }
+
+  return items
+    .map((item, index) => {
+      const amount = Number(item?.amount);
+      const servicePaid =
+        (typeof item?.servicePaid === 'string' && item.servicePaid.trim())
+        || (typeof item?.service_paid === 'string' && item.service_paid.trim())
+        || '';
+      if (!Number.isFinite(amount) || amount <= 0 || !servicePaid) {
+        return null;
+      }
+
+      return {
+        id: typeof item?.id === 'string' && item.id.trim() ? item.id.trim() : `product-${index + 1}`,
+        name: typeof item?.name === 'string' && item.name.trim() ? item.name.trim() : `Product ${index + 1}`,
+        amount,
+        currency: typeof item?.currency === 'string' && item.currency.trim() ? item.currency.trim().toUpperCase() : 'RWF',
+        servicePaid
+      };
+    })
+    .filter(Boolean);
+}
+
+function renderProductOptions(products) {
+  const previousValue = productSelect.value;
+  productSelect.innerHTML = '';
+
+  products.forEach((product) => {
+    const option = document.createElement('option');
+    option.value = product.id;
+    option.textContent = `${product.name} - ${product.amount} ${product.currency}`;
+    productSelect.appendChild(option);
+  });
+
+  const customOption = document.createElement('option');
+  customOption.value = '__custom__';
+  customOption.textContent = 'Custom amount/service';
+  productSelect.appendChild(customOption);
+
+  const canKeepSelection = products.some((product) => product.id === previousValue) || previousValue === '__custom__';
+  productSelect.value = canKeepSelection ? previousValue : (products[0]?.id || '__custom__');
+}
+
+function getSelectedProduct() {
+  const selectedId = productSelect.value;
+  if (!selectedId || selectedId === '__custom__') {
+    return null;
+  }
+
+  return availableProducts.find((product) => product.id === selectedId) || null;
+}
+
+function applySelectedProduct() {
+  const selected = getSelectedProduct();
+  if (!selected) {
+    return;
+  }
+
+  amountInput.value = String(selected.amount);
+  serviceInput.value = selected.servicePaid;
+}
+
+async function loadProducts() {
+  try {
+    const response = await fetch('/api/products');
+    const body = await response.json();
+    const serverProducts = normalizeProducts(body?.data);
+    if (response.ok && serverProducts.length > 0) {
+      availableProducts = serverProducts;
+    }
+  } catch (error) {
+    // Fallback to local defaults when product endpoint is unavailable.
+    availableProducts = [...DEFAULT_PRODUCTS];
+  }
+
+  renderProductOptions(availableProducts);
+  if (activeMethod !== 'payout') {
+    applySelectedProduct();
+  }
 }
 
 function renderResult(httpStatus, body) {
@@ -113,7 +230,7 @@ function renderResult(httpStatus, body) {
     method: activeMethod,
     status: statusLabel,
     referenceId,
-    amount: document.getElementById('amount').value
+    amount: amountInput.value
   });
 
   if (history.length > 8) {
@@ -147,7 +264,7 @@ function buildPayload() {
   const payload = {
     email: document.getElementById('email').value.trim(),
     name: document.getElementById('name').value.trim(),
-    amount: document.getElementById('amount').value.trim(),
+    amount: amountInput.value.trim(),
     servicePaid: serviceInput.value.trim()
   };
 
@@ -209,7 +326,10 @@ async function lookupStatus(event) {
     const response = await fetch(`/api/payment/status/${encodeURIComponent(reference)}`);
     const body = await response.json();
     const statusLabel = extractStatusLabel(body?.status);
-    statusResult.textContent = `HTTP ${response.status} | ${statusLabel.toUpperCase()} | ${body.message || 'No message'}${body.referenceId ? ` | Ref: ${body.referenceId}` : ''}`;
+    const paymentOutcome = (body?.paymentOutcome || normalizePaymentOutcome(body?.status)).toUpperCase();
+    const successfulText = body?.isSuccessful === true ? 'YES' : body?.isSuccessful === false ? 'NO' : 'UNKNOWN';
+    const callbackText = body?.hasCallback === true ? 'YES' : body?.hasCallback === false ? 'NO' : 'UNKNOWN';
+    statusResult.textContent = `HTTP ${response.status} | API ${statusLabel.toUpperCase()} | OUTCOME ${paymentOutcome} | SUCCESSFUL ${successfulText} | CALLBACK ${callbackText}${body.referenceId ? ` | Ref: ${body.referenceId}` : ''}${body.message ? ` | ${body.message}` : ''}`;
   } catch (error) {
     statusResult.textContent = `Lookup failed: ${error.message}`;
   }
@@ -236,6 +356,10 @@ methodTabs.forEach((tab) => {
   tab.addEventListener('click', () => setActiveMethod(tab.dataset.method));
 });
 
+productSelect.addEventListener('change', () => {
+  applySelectedProduct();
+});
+
 paymentForm.addEventListener('submit', submitPayment);
 statusForm.addEventListener('submit', lookupStatus);
 
@@ -255,5 +379,6 @@ copyReferenceBtn.addEventListener('click', async () => {
 });
 
 setActiveMethod(activeMethod);
+loadProducts();
 renderHistory();
 handleCardReturnBanner();

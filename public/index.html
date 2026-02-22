@@ -57,6 +57,14 @@
               <small class="helper">Accepted: `078xxxxx`, `7xxxxxxxx`, `2507xxxxxxxx`, `+2507xxxxxxxx`</small>
             </label>
 
+            <label class="field">
+              <span>Product</span>
+              <select id="product">
+                <option value="">Loading products...</option>
+              </select>
+              <small class="helper">Includes a `100 RWF` MoMo test product.</small>
+            </label>
+
             <div class="field-row">
               <label class="field">
                 <span>Amount (RWF)</span>
@@ -116,7 +124,7 @@
         <article class="panel checker-panel">
           <div class="panel-head">
             <h2>Status Check</h2>
-            <p>Lookup any transaction by reference ID.</p>
+            <p>Lookup any transaction by reference ID (`paymentOutcome = success` means payment succeeded).</p>
           </div>
 
           <form id="status-form" class="status-form">

@@ -21,6 +21,16 @@ try {
 }
 
 const callbackState = new Map();
+const TEST_PRODUCTS = [
+  {
+    id: 'momo-test-100-rwf',
+    name: 'MoMo Test Product',
+    servicePaid: 'test_product_100_rwf',
+    amount: 100,
+    currency: 'RWF',
+    description: 'Use this product to verify MoMo callback and status flow'
+  }
+];
 
 // Needed on Vercel/other proxies so req.protocol resolves to https.
 app.set('trust proxy', true);
@@ -115,7 +125,56 @@ function normalizeMessage(payload, fallback) {
   return fallback;
 }
 
-function apiResponse(res, result, defaultFailStatus = 400) {
+function normalizeStatusValue(status) {
+  if (typeof status === 'boolean') {
+    return status ? 'success' : 'failed';
+  }
+  if (typeof status === 'number') {
+    if (status === 1) {
+      return 'success';
+    }
+    if (status === 0) {
+      return 'failed';
+    }
+  }
+  if (typeof status === 'string' && status.trim()) {
+    return status.trim().toLowerCase();
+  }
+  return 'unknown';
+}
+
+function normalizePaymentOutcome(status) {
+  const normalized = normalizeStatusValue(status);
+  if (['success', 'completed', 'ok', 'paid', 'true'].includes(normalized)) {
+    return 'success';
+  }
+  if (['pending', 'processing', 'in_progress', 'initiated'].includes(normalized)) {
+    return 'pending';
+  }
+  if (['fail', 'failed', 'error', 'cancelled', 'canceled', 'declined', 'false'].includes(normalized)) {
+    return 'failed';
+  }
+  return 'unknown';
+}
+
+function extractStatus(payload) {
+  if (!payload || typeof payload !== 'object') {
+    return null;
+  }
+
+  if (payload.status !== undefined && payload.status !== null) {
+    return payload.status;
+  }
+  if (payload.data && payload.data.status !== undefined && payload.data.status !== null) {
+    return payload.data.status;
+  }
+  if (payload.payment_status !== undefined && payload.payment_status !== null) {
+    return payload.payment_status;
+  }
+  return null;
+}
+
+function apiResponse(res, result, defaultFailStatus = 400, extra = {}) {
   const payload = result?.data;
   const success = Boolean(result?.success);
   const message = normalizeMessage(payload, success ? 'Request successful' : 'Request failed');
@@ -137,7 +196,8 @@ function apiResponse(res, result, defaultFailStatus = 400) {
     message,
     referenceId,
     redirectUrl,
-    data: payload || null
+    data: payload || null,
+    ...extra
   });
 }
 
@@ -164,6 +224,7 @@ app.get('/api', (req, res) => {
       'POST /api/payment/card': 'Initiate card collection',
       'POST /api/payout': 'Initiate payout',
       'POST /api/sms': 'Send SMS',
+      'GET /api/products': 'List available test products',
       'GET /api/payment/status/:referenceId': 'Check transaction status',
       'POST /api/payment-callback': 'Callback endpoint',
       'GET /api/payment-callback': 'Callback endpoint (card redirect support)'
@@ -176,6 +237,15 @@ app.get('/api/health', (req, res) => {
     status: 'ok',
     uptime: process.uptime(),
     callbackBaseUrl: resolveBaseUrl(req)
+  });
+});
+
+app.get('/api/products', (req, res) => {
+  res.json({
+    success: true,
+    status: 'success',
+    message: 'Available products',
+    data: TEST_PRODUCTS
   });
 });
 
@@ -321,11 +391,21 @@ app.get('/api/payment/status/:referenceId', async (req, res) => {
       payload.callback = localCallback;
     }
 
+    const callbackOutcome = localCallback ? normalizePaymentOutcome(localCallback.status) : 'unknown';
+    const gatewayOutcome = normalizePaymentOutcome(extractStatus(payload));
+    const paymentOutcome = callbackOutcome !== 'unknown' ? callbackOutcome : gatewayOutcome;
+    const isSuccessful = paymentOutcome === 'success';
+    const statusMeta = {
+      paymentOutcome,
+      isSuccessful,
+      hasCallback: Boolean(localCallback)
+    };
+
     if (!result.success && /not found/i.test(responseText)) {
-      return apiResponse(res, result, 404);
+      return apiResponse(res, result, 404, statusMeta);
     }
 
-    return apiResponse(res, result);
+    return apiResponse(res, result, 400, statusMeta);
   } catch (error) {
     return sendRouteError(res, error);
   }

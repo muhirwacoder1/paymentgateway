@@ -1,0 +1,1 @@
+[2026-02-22T09:08:14.326Z] [MOMO] {"reference_id":"ORDER-TEST-100","transaction_id":"TXN-100","status":"success","amount":100,"payment_method":"MTN_MOMO_RWA"}
